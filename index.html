@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<title>砂嵐暗号</title>
+	<meta charset="UTF-8">
+	<link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png">
+	<link rel="icon" type="image/png" sizes="32x32" href="./favicon-32x32.png">
+	<link rel="icon" type="image/png" sizes="16x16" href="./favicon-16x16.png">
+	<link rel="manifest" href="./site.webmanifest">
+	<link rel="mask-icon" href="./safari-pinned-tab.svg" color="#5bbad5">
+	<meta name="msapplication-TileColor" content="#da532c">
+	<meta name="theme-color" content="#ffffff">
+	<style type="text/css">
+		body {
+			max-width: 600px;
+			overflow-wrap: break-word;
+			margin: auto;
+		}
+
+		canvas {
+			border: 1px solid black;
+			width: 80%;
+		}
+	</style>
+	<script>
+
+		// 白黒画像の二値化の閾値(0 ~ 255)
+		let border;
+
+		// 画像のサイズ
+		let width, height;
+
+		document.addEventListener("DOMContentLoaded", (event) => {
+			document.querySelector("#form").addEventListener("change", (event) => {
+				let reader = new FileReader();
+				let image = new Image();
+				reader.onload = function () {
+					image.src = reader.result;
+				};
+				image.onload = function () {
+					width = image.width;
+					height = image.height;
+					border = document.querySelector("#threshold").valueAsNumber;
+
+					// プレビュー
+					let inputCanvas = document.querySelector("#input");
+					inputCanvas.width = width;
+					inputCanvas.height = height;
+					let inputCtx = inputCanvas.getContext("2d");
+					inputCtx.drawImage(image, 0, 0);
+
+					// 描画
+					redraw(inputCtx);
+				};
+				reader.readAsDataURL(event.target.files[0]);
+			});
+
+			document.querySelector("#threshold").addEventListener("change", (e) => {
+				border = e.target.valueAsNumber;
+				redraw(document.querySelector("#input").getContext("2d"));
+			});
+		});
+
+		// カラー画像をモノクロ（二値化）する。
+		function monochrome(inputImageCtx, outputImageCtx) {
+
+			let inputData = inputImageCtx.getImageData(0, 0, width, height);
+			let outputData = outputImageCtx.getImageData(0, 0, width, height);
+
+			for (let i = 0; i < inputData.data.length; i += 4) {
+				let lum = 255 - (255 - (0.299 * inputData.data[i] + 0.587 * inputData.data[i + 1] + 0.114 * inputData.data[i + 2])) * (inputData.data[i + 3] / 255);
+				let mono = (lum > border) ? 255 : 0;
+				outputData.data[i] = mono;
+				outputData.data[i + 1] = mono;
+				outputData.data[i + 2] = mono;
+				outputData.data[i + 3] = 255;
+			}
+
+			outputImageCtx.putImageData(outputData, 0, 0)
+		}
+
+		// モノクロ画像を砂嵐画像に変換する。
+		function sandstorm(monoImageCtx, outputCtx1, outputCtx2) {
+
+			let monoData = monoImageCtx.getImageData(0, 0, width, height);
+			let outputData1 = outputCtx1.getImageData(0, 0, 2 * width, 2 * height);
+			let outputData2 = outputCtx2.getImageData(0, 0, 2 * width, 2 * height);
+
+			// 右傾(0)もしくは左傾(1)のパターンを描画する。x[0,width-1], y[0,height-1]
+			const drawPattern = function (imageData, pattern, x, y) {
+
+				// 左上
+				let n = 8 * (x + 2 * y * width);
+				imageData.data[n] = 0;
+				imageData.data[n + 1] = 0;
+				imageData.data[n + 2] = 0;
+				imageData.data[n + 3] = 255 * (1 - pattern);
+				// 右上
+				imageData.data[n + 4] = 0;
+				imageData.data[n + 5] = 0;
+				imageData.data[n + 6] = 0;
+				imageData.data[n + 7] = 255 * pattern;
+
+				// 左下
+				n += 8 * width;
+				imageData.data[n] = 0;
+				imageData.data[n + 1] = 0;
+				imageData.data[n + 2] = 0;
+				imageData.data[n + 3] = 255 * pattern;
+				// 右下
+				imageData.data[n + 4] = 0;
+				imageData.data[n + 5] = 0;
+				imageData.data[n + 6] = 0;
+				imageData.data[n + 7] = 255 * (1 - pattern);
+			};
+
+			for (let y = 0; y < height; y++) {
+				for (let x = 0; x < width; x++) {
+					let pattern1 = Math.round(Math.random());
+					let pattern2 = monoData.data[4 * (x + y * width)] ? pattern1 : 1 - pattern1;
+					drawPattern(outputData1, pattern1, x, y);
+					drawPattern(outputData2, pattern2, x, y);
+				}
+			}
+
+			outputCtx1.putImageData(outputData1, 0, 0);
+			outputCtx2.putImageData(outputData2, 0, 0);
+
+		}
+
+		// 二値化と砂嵐の生成
+		function redraw(inputCtx) {
+			// 二値化
+			let monoCanvas = document.querySelector("#mono-preview");
+			monoCanvas.width = width;
+			monoCanvas.height = height;
+			let monoCtx = monoCanvas.getContext("2d");
+			monochrome(inputCtx, monoCtx);
+
+			// 砂嵐暗号を生成
+			let outputCanvas1 = document.querySelector("#output1");
+			let outputCanvas2 = document.querySelector("#output2");
+			outputCanvas1.width = 2 * width;
+			outputCanvas1.height = 2 * height;
+			outputCanvas2.width = 2 * width;
+			outputCanvas2.height = 2 * height;
+			let outputCtx1 = outputCanvas1.getContext("2d");
+			let outputCtx2 = outputCanvas2.getContext("2d");
+			sandstorm(monoCtx, outputCtx1, outputCtx2);
+		}
+
+	</script>
+</head>
+
+<body>
+	<h1>砂嵐暗号</h1>
+	
+	<h3>① 画像の選択</h3>
+	<p>元画像を選択します。（細かすぎると見づらいので、50ピクセル四方くらいで十分です。）</p>
+	<p><input id="form" type="file" accept="image/*"></p>
+	<div>
+		<canvas id="input"></canvas>
+	</div>
+	
+	<h3>② 画像の二値化</h3>
+	<p>画像を白黒２階調化します。しきい値を下のスライダーで調節できます。</p>
+	<div>
+		<input type="range" id="threshold" name="threshold" min="-1" max="255" value="128">
+		<label for="threshold">二値化の閾値</label>
+	</div>
+	<div>
+		<canvas id="mono-preview"></canvas>
+	</div>
+	
+	<h3>③ 砂嵐暗号の出力</h3>
+	<p>砂嵐暗号の２枚の画像が出力されます。
+	<div>
+		<canvas id="output1"></canvas>
+	</div>
+	<div>
+		<canvas id="output2"></canvas>
+	</div>
+	
+	<footer>
+		&copy; Bossan
+	</footer>
+</body>
+
+</html>
